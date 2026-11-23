@@ -41,6 +41,25 @@ The scan is read-only. Logs rotate in the app's private storage. Use **View log*
 **Copy log** to share recent entries manually, for example when reporting a device
 compatibility issue. ChargeScope keeps the log on the phone.
 
+## Contributing code and device data
+
+Code contributions and device reports are welcome. Logs from MediaTek phones and
+other Qualcomm models are especially helpful for improving compatibility. A report
+is useful even if you have no root access or the dashboard shows limited data.
+
+- **Share a device report.** In **USB interface log**, tap **Start logging**, plug
+  in a charger, wait for the readings to settle, then unplug it. Use **View log**
+  and **Copy log** to include the relevant entries in a
+  [GitHub issue](https://github.com/NivedV1/ChargeScope/issues/new). Include the phone
+  model, Android and ChargeScope versions, whether root was enabled, and the charger
+  model or rated wattage if known. Mention any readings that were missing or looked
+  wrong. Issues are public, so review the log before posting and remove anything
+  you prefer to keep private.
+- **Contribute a fix or improvement.** Open a
+  [pull request](https://github.com/NivedV1/ChargeScope/compare) and describe what
+  changed and how you tested it. For device support changes, include the phone model
+  and the relevant interface log entries if available.
+
 ## Build
 
 Install Android SDK Platform 36, Android Build Tools 36.0.0, a JDK, and `zip`.
