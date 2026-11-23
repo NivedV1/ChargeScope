@@ -66,3 +66,7 @@ Install Android SDK Platform 36, Android Build Tools 36.0.0, a JDK, and `zip`.
 Set `ANDROID_SDK_ROOT` to the SDK directory and run `./build.sh`. The script writes
 a development-signed `ChargeScope.apk`. Keep the generated `.build/debug.keystore`
 if you want to install future builds as updates.
+
+## License
+
+ChargeScope is released under the [MIT License](LICENSE).
