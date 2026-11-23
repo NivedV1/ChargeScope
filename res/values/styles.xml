@@ -1,0 +1,26 @@
+<resources>
+    <item name="ChargeScope" type="style">@style/ChargeScopeLight</item>
+    <item name="dashboard_scroll" type="id" />
+
+    <style name="ChargeScopeLight" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">#F7FAF8</item>
+        <item name="android:statusBarColor">#F7FAF8</item>
+        <item name="android:navigationBarColor">#F7FAF8</item>
+        <item name="android:colorAccent">#176B4B</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+
+    <style name="ChargeScopeDark" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">#101513</item>
+        <item name="android:statusBarColor">#101513</item>
+        <item name="android:navigationBarColor">#101513</item>
+        <item name="android:colorAccent">#A1D9B9</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+</resources>
