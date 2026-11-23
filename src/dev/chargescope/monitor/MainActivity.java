@@ -454,6 +454,7 @@ public final class MainActivity extends Activity {
 
         double usbV = power.usbAttached ? positive(field("usb.voltage_now", 0.000001)) : Double.NaN;
         double usbA = power.usbAttached ? field("usb.input_current_now", 0.000001) : Double.NaN;
+        usbA = ChargingConnection.usbCurrentIntoPhone(usbA, powerRole);
         String pumpEnabled = sample.get("pump.charging_enabled");
         String pumpVbus = sample.get("pump.ti_vbus_present");
         double pumpVoltage = positive(field("pump.ti_bus_voltage", 0.001));

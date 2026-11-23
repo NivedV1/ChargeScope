@@ -13,9 +13,11 @@ newer. Download `ChargeScope.apk` from [GitHub Releases](https://github.com/Nive
   read them. With KernelSU, allow ChargeScope in the **Superuser** tab if the request
   is denied, then tap **Enable root** again.
 - **Live measurements** update every two seconds while the dashboard is visible.
-  USB input, charge-pump input, and battery readings describe different measurement
-  points. Positive battery power indicates net power into the battery. An inactive
-  charge pump can still report its input voltage and current while USB is connected.
+  The main USB path, charge-pump input, and battery readings describe different
+  measurement points. USB current and power are negative when the phone supplies
+  power to a connected accessory. Positive battery power indicates net power into
+  the battery. An inactive charge pump can still report its input voltage and
+  current while USB is connected.
 - **Appearance** follows your choice of **System default**, **Light**, or **Dark**.
   Android 12 and newer supply the Material You color palette.
 

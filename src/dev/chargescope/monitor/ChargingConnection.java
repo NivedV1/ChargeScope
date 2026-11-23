@@ -20,6 +20,11 @@ final class ChargingConnection {
         wireless = !androidReportsWired && (plugged & BatteryManager.BATTERY_PLUGGED_WIRELESS) != 0;
     }
 
+    static double usbCurrentIntoPhone(double current, String powerRole) {
+        // Some drivers report a positive current magnitude even when sourcing USB power.
+        return "source".equals(powerRole) && current > 0 ? -current : current;
+    }
+
     static String androidSource(int plugged) {
         if ((plugged & BatteryManager.BATTERY_PLUGGED_USB) != 0) return "USB";
         if ((plugged & BatteryManager.BATTERY_PLUGGED_AC) != 0) return "Wired (AC)";
