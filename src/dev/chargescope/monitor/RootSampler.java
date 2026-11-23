@@ -1,16 +1,22 @@
 package dev.chargescope.monitor;
 
+import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
 final class RootSampler {
+    static final String PREFERENCES = "telemetry";
+    static final String ROOT_PREF = "read_root_telemetry";
+
     interface Listener {
         void onSample(Map<String, String> values);
         void onUnavailable(boolean receivedSamples);
@@ -20,10 +26,24 @@ final class RootSampler {
     private int generation;
     private Process process;
 
+    static String loadScript(Context context, String name) throws IOException {
+        try (InputStream input = context.getAssets().open(name);
+             ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int length;
+            while ((length = input.read(buffer)) != -1) bytes.write(buffer, 0, length);
+            return new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+        }
+    }
+
     synchronized void start(String script, Listener listener) {
+        start(script, true, listener);
+    }
+
+    synchronized void start(String script, boolean useRoot, Listener listener) {
         stop();
         int run = generation;
-        new Thread(() -> collect(run, script, listener), "charging-telemetry").start();
+        new Thread(() -> collect(run, script, useRoot, listener), "charging-telemetry").start();
     }
 
     synchronized void stop() {
@@ -38,12 +58,13 @@ final class RootSampler {
         return generation == run;
     }
 
-    private void collect(int run, String script, Listener listener) {
+    private void collect(int run, String script, boolean useRoot, Listener listener) {
         Process child = null;
-        boolean root = false;
+        boolean ready = !useRoot;
         boolean receivedSamples = false;
         try {
-            child = new ProcessBuilder("su", "-c", script).redirectErrorStream(true).start();
+            child = new ProcessBuilder(useRoot ? "su" : "/system/bin/sh", "-c", script)
+                .redirectErrorStream(true).start();
             synchronized (this) {
                 if (!current(run)) return;
                 process = child;
@@ -54,15 +75,15 @@ final class RootSampler {
                 String line;
                 while (current(run) && (line = reader.readLine()) != null) {
                     if ("@ROOT".equals(line)) {
-                        root = true;
-                    } else if (root && "@SAMPLE".equals(line)) {
+                        ready = true;
+                    } else if (ready && "@SAMPLE".equals(line)) {
                         Map<String, String> sample = fields;
                         fields = new HashMap<>();
                         receivedSamples = true;
                         main.post(() -> {
                             if (current(run)) listener.onSample(sample);
                         });
-                    } else if (root && line.contains("=")) {
+                    } else if (ready && line.contains("=")) {
                         int split = line.indexOf('=');
                         fields.put(line.substring(0, split), line.substring(split + 1));
                     }

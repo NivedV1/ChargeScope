@@ -1,10 +1,14 @@
 package dev.chargescope.monitor;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.graphics.Canvas;
@@ -16,6 +20,7 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.os.BatteryManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -25,11 +30,9 @@ import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -38,8 +41,9 @@ import java.util.Map;
 
 public final class MainActivity extends Activity {
     private static final String EMPTY = "—";
-    private static final String ROOT_PREF = "read_root_telemetry";
     private static final String THEME_PREF = "appearance";
+    private static final String NOTIFICATION_PREF = "logger_notification_requested";
+    private static final int LOGGER_NOTIFICATION_PERMISSION = 1;
     private static final String[] THEMES = {"System default", "Light", "Dark"};
     private static final int SYSTEM = 0;
     private static final int DARK = 2;
@@ -71,6 +75,8 @@ public final class MainActivity extends Activity {
     private TextView request;
     private TextView temperature;
     private TextView profilesHint;
+    private TextView logStatus;
+    private TextView logToggle;
     private LinearLayout profilesView;
     private String displayedProfiles = "";
     private SensorRow pumpRow;
@@ -80,7 +86,7 @@ public final class MainActivity extends Activity {
     private PowerTrend trend;
 
     @Override public void onCreate(Bundle state) {
-        prefs = getSharedPreferences("telemetry", MODE_PRIVATE);
+        prefs = getSharedPreferences(RootSampler.PREFERENCES, MODE_PRIVATE);
         themeChoice = prefs.getInt(THEME_PREF, SYSTEM);
         boolean systemDark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
             == Configuration.UI_MODE_NIGHT_YES;
@@ -92,12 +98,8 @@ public final class MainActivity extends Activity {
         getWindow().setStatusBarColor(palette.background);
         getWindow().setNavigationBarColor(palette.background);
         battery = getSystemService(BatteryManager.class);
-        try (InputStream input = getAssets().open("telemetry.sh");
-             ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[4096];
-            int length;
-            while ((length = input.read(buffer)) != -1) bytes.write(buffer, 0, length);
-            script = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+        try {
+            script = RootSampler.loadScript(this, "telemetry.sh");
         } catch (IOException ignored) {
             rootMessage = "The telemetry script could not be opened.";
         }
@@ -112,7 +114,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onStart() {
         super.onStart();
-        if (prefs.getBoolean(ROOT_PREF, false)) requestRoot();
+        if (prefs.getBoolean(RootSampler.ROOT_PREF, false)) requestRoot();
         tick.run();
     }
 
@@ -134,7 +136,7 @@ public final class MainActivity extends Activity {
             @Override public void onSample(Map<String, String> values) {
                 sample = values;
                 root = true;
-                if (requesting) prefs.edit().putBoolean(ROOT_PREF, true).apply();
+                if (requesting) prefs.edit().putBoolean(RootSampler.ROOT_PREF, true).apply();
                 requesting = false;
                 rootMessage = null;
                 render();
@@ -144,7 +146,7 @@ public final class MainActivity extends Activity {
                 root = false;
                 requesting = false;
                 sample = Collections.emptyMap();
-                prefs.edit().putBoolean(ROOT_PREF, false).apply();
+                prefs.edit().putBoolean(RootSampler.ROOT_PREF, false).apply();
                 rootMessage = receivedSamples ? "Root connection ended. Tap to reconnect."
                     : "Grant ChargeScope superuser access in KernelSU, then tap to retry.";
                 render();
@@ -154,7 +156,7 @@ public final class MainActivity extends Activity {
 
     private void stopRoot() {
         sampler.stop();
-        prefs.edit().putBoolean(ROOT_PREF, false).apply();
+        prefs.edit().putBoolean(RootSampler.ROOT_PREF, false).apply();
         sample = Collections.emptyMap();
         root = false;
         requesting = false;
@@ -261,7 +263,83 @@ public final class MainActivity extends Activity {
         profilesView = column();
         add(capabilities, profilesView, 2);
         add(content, capabilities, 12);
+
+        LinearLayout logger = card(palette.surface);
+        logger.addView(label("USB interface log", 17, palette.onSurface, true));
+        logStatus = label("", 12, palette.onSurfaceVariant, false);
+        add(logger, logStatus, 6);
+        LinearLayout loggerActions = row();
+        logToggle = actionLabel("Start logging");
+        logToggle.setOnClickListener(view -> toggleLogging());
+        loggerActions.addView(logToggle, new LinearLayout.LayoutParams(-2, dp(48)));
+        TextView viewLog = actionLabel("View log");
+        viewLog.setOnClickListener(view -> showInterfaceLog());
+        LinearLayout.LayoutParams logViewParams = new LinearLayout.LayoutParams(-2, dp(48));
+        logViewParams.leftMargin = dp(8);
+        loggerActions.addView(viewLog, logViewParams);
+        add(logger, loggerActions, 9);
+        add(content, logger, 12);
         setContentView(scroll);
+    }
+
+    private TextView actionLabel(String text) {
+        TextView view = label(text, 12, palette.primary, true);
+        view.setPadding(dp(13), 0, dp(13), 0);
+        view.setGravity(Gravity.CENTER);
+        view.setBackground(controlBackground(24));
+        return view;
+    }
+
+    private void toggleLogging() {
+        if (InterfaceLoggerService.isRunning()) {
+            stopService(new Intent(this, InterfaceLoggerService.class));
+        } else if (Build.VERSION.SDK_INT >= 33 && !prefs.getBoolean(NOTIFICATION_PREF, false)
+            && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            prefs.edit().putBoolean(NOTIFICATION_PREF, true).apply();
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, LOGGER_NOTIFICATION_PERMISSION);
+        } else {
+            startLogger();
+        }
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == LOGGER_NOTIFICATION_PERMISSION) startLogger();
+    }
+
+    private void startLogger() {
+        try {
+            startForegroundService(new Intent(this, InterfaceLoggerService.class));
+        } catch (IllegalStateException | SecurityException error) {
+            Toast.makeText(this, "Android couldn’t start interface logging.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void showInterfaceLog() {
+        String record;
+        try {
+            record = InterfaceLog.recent(getFilesDir());
+        } catch (IOException error) {
+            Toast.makeText(this, "Couldn’t read the interface log.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        TextView body = label(record.isEmpty() ? "No interface snapshots yet." : record,
+            12, palette.onSurface, false);
+        body.setTextIsSelectable(true);
+        body.setTypeface(Typeface.MONOSPACE);
+        body.setPadding(dp(20), dp(12), dp(20), dp(12));
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(body);
+        AlertDialog.Builder dialog = new AlertDialog.Builder(this)
+            .setTitle("Recent interface log")
+            .setView(scroll)
+            .setNegativeButton("Close", null);
+        if (!record.isEmpty()) {
+            dialog.setPositiveButton("Copy log", (ignored, button) ->
+                getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("USB interface log", record)));
+        }
+        dialog.show();
+        scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
     }
 
     private void showAppearance() {
@@ -288,6 +366,10 @@ public final class MainActivity extends Activity {
 
     private void render() {
         renderAccess();
+        boolean logging = InterfaceLoggerService.isRunning();
+        logToggle.setText(logging ? "Stop logging" : "Start logging");
+        logStatus.setText(logging ? "Logging interface changes in the background"
+            : "Record USB-C and charging interfaces on this device");
         Intent info = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
         int level = info == null ? -1 : info.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
         int status = info == null ? 0 : info.getIntExtra(BatteryManager.EXTRA_STATUS, 0);
@@ -310,13 +392,10 @@ public final class MainActivity extends Activity {
 
         String dataRole = selectedRole(sample.get("port.data_role"));
         String powerRole = selectedRole(sample.get("port.power_role"));
-        boolean online = "1".equals(sample.get("usb.online"));
-        boolean attached = root
-            ? online || "1".equals(sample.get("usb.present")) || sample.containsKey("partner.supports_usb_power_delivery")
-            : plugged != 0;
-        boolean pd = attached && "explicit".equals(sample.get("pd.contract"));
+        ChargingConnection power = new ChargingConnection(sample, plugged);
+        boolean pd = power.usbAttached && "explicit".equals(sample.get("pd.contract"));
         List<PdProfile> profiles = new ArrayList<>();
-        if (attached) {
+        if (power.usbAttached) {
             for (int i = 1; i <= 7; i++) {
                 PdProfile profile = PdProfile.decode(i, sample.get("pd.pdo" + i));
                 if (profile != null) profiles.add(profile);
@@ -330,14 +409,14 @@ public final class MainActivity extends Activity {
             if (profile.index == activeIndex) active = profile;
         }
 
-        String type = sample.get("usb.real_type");
+        String type = power.usbAttached ? sample.get("usb.real_type") : null;
         String modeText;
-        if (!attached) modeText = "No charger connected";
+        if (!power.powerAttached) modeText = "No charger connected";
+        else if (power.wireless && !power.usbAttached) modeText = "Wireless charging";
         else if (active != null && "PPS".equals(active.kind)) modeText = "USB Power Delivery · PPS";
         else if (pd || "USB_PD".equals(type)) modeText = "USB Power Delivery";
         else if ("source".equals(powerRole)) modeText = "USB host · power source";
         else if (type != null && !type.equals("Unknown")) modeText = type.replace('_', ' ');
-        else if (plugged == BatteryManager.BATTERY_PLUGGED_WIRELESS) modeText = "Wireless charging";
         else modeText = "External power connected";
         mode.setText(modeText);
 
@@ -355,11 +434,11 @@ public final class MainActivity extends Activity {
             a = active == null ? Double.NaN : active.requestedCurrent(rdo);
         }
         boolean hasRequest = Double.isFinite(positive(v)) && Double.isFinite(positive(a));
-        if (!hasRequest && attached && (pd || "USB_PD".equals(type))) {
+        if (!hasRequest && power.usbAttached && (pd || "USB_PD".equals(type))) {
             v = positive(field("usb.pd_voltage_max", 0.000001));
             a = positive(field("usb.pd_current_max", 0.000001));
         }
-        String roles = dataRole != null && powerRole != null && attached
+        String roles = dataRole != null && powerRole != null && power.usbAttached
             ? capitalize(dataRole) + " · power " + powerRole : "";
         if (Double.isFinite(v) && Double.isFinite(a)) {
             String suffix = roles.isEmpty() ? "" : "\n" + roles;
@@ -369,16 +448,16 @@ public final class MainActivity extends Activity {
             request.setText(roles.isEmpty() ? modeText : roles);
         }
 
-        double connectorTemp = attached ? field("usb.connector_temp", 0.1) : Double.NaN;
+        double connectorTemp = power.usbAttached ? field("usb.connector_temp", 0.1) : Double.NaN;
         temperature.setText("Battery " + unit(batteryTemp, "°C") + "  ·  Connector "
             + unit(connectorTemp, "°C"));
 
-        double usbV = attached ? positive(field("usb.voltage_now", 0.000001)) : Double.NaN;
-        double usbA = attached ? field("usb.input_current_now", 0.000001) : Double.NaN;
+        double usbV = power.usbAttached ? positive(field("usb.voltage_now", 0.000001)) : Double.NaN;
+        double usbA = power.usbAttached ? field("usb.input_current_now", 0.000001) : Double.NaN;
         String pumpEnabled = sample.get("pump.charging_enabled");
         String pumpVbus = sample.get("pump.ti_vbus_present");
         double pumpVoltage = positive(field("pump.ti_bus_voltage", 0.001));
-        boolean pumpHasInput = attached && ("1".equals(pumpVbus)
+        boolean pumpHasInput = power.usbAttached && ("1".equals(pumpVbus)
             || (pumpVbus == null && Double.isFinite(pumpVoltage)));
         double pumpV = pumpHasInput ? pumpVoltage : Double.NaN;
         double pumpA = pumpHasInput ? field("pump.ti_bus_current", 0.001) : Double.NaN;
@@ -395,7 +474,7 @@ public final class MainActivity extends Activity {
         double sense = positive(field("pump.ti_battery_voltage", 0.001));
         rails.setVisibility(root && (Double.isFinite(rail) || Double.isFinite(sense)) ? View.VISIBLE : View.GONE);
         rails.setText("System rail " + unit(rail, "V") + "  ·  Pump battery sense " + unit(sense, "V"));
-        renderProfiles(profiles, activeIndex, attached);
+        renderProfiles(profiles, activeIndex, power.usbAttached);
     }
 
     private void renderProfiles(List<PdProfile> profiles, int active, boolean attached) {

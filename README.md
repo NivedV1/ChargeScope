@@ -1,22 +1,45 @@
 # ChargeScope
 
-ChargeScope shows live charging telemetry on Android. The battery view uses Android's
-public battery API. Tap **Enable root** for charger capabilities, USB-C roles,
-the active PD request, connector temperature, and separate USB and charge-pump
-measurements. On the Mi 11X, allow ChargeScope in KernelSU's Superuser tab if the
-root request is denied, then tap **Enable root** again.
+ChargeScope shows live battery, USB-C, and charging telemetry on Android 8.0 and
+newer. Download `ChargeScope.apk` from [GitHub Releases](https://github.com/NivedV1/ChargeScope/releases/latest).
 
-Use the theme button beside the root control to choose **System default**, **Light**,
-or **Dark**. Android 12 and newer supply the Material You palette. Older Android
-versions use a built-in light or dark palette.
+## Charging dashboard
 
-The app reads kernel properties without writing to them. The USB and charge-pump
-rows describe individual measurement points. Battery power is signed in the
-measurements table, with positive values representing net power into the battery.
-When the charge pump is inactive, its row still shows the input voltage and
-current reported by the sensor while USB power is present.
-Telemetry runs every two seconds while the app is visible. Availability of detailed
-readings depends on the phone's kernel.
+- **Battery and power status** use Android's battery API and work without root. Since
+  1.2.0, Android's plug status also applies when root is enabled and vendor USB files
+  are missing.
+- **Charger and USB-C details** can include the charger's advertised USB PD profiles,
+  the active PD request, and the port's data and power roles. Tap **Enable root** to
+  read them. With KernelSU, allow ChargeScope in the **Superuser** tab if the request
+  is denied, then tap **Enable root** again.
+- **Live measurements** update every two seconds while the dashboard is visible.
+  USB input, charge-pump input, and battery readings describe different measurement
+  points. Positive battery power indicates net power into the battery. An inactive
+  charge pump can still report its input voltage and current while USB is connected.
+- **Appearance** follows your choice of **System default**, **Light**, or **Dark**.
+  Android 12 and newer supply the Material You color palette.
+
+Detailed readings depend on the phone's kernel and available sensors. The detailed
+USB PD and charge-pump dashboard was tested on the Xiaomi Mi 11X. Other Qualcomm
+and MediaTek devices may expose different interfaces and show fewer readings.
+
+## Interface logging
+
+Open **USB interface log** and tap **Start logging**. ChargeScope scans on power
+connection changes and about every 30 seconds, even when the dashboard is in the
+background. Android can show an ongoing notification with **Stop logging** when
+notifications are allowed. You can also stop logging in the app.
+
+The log records the device model, Android and kernel versions, and changes to the
+power source, visible USB-C and charging interfaces, driver names, and reported
+modes. The scan covers standard Linux Type-C and USB PD classes, vendor USB PD
+classes, Type-C port controllers, and charging power supplies. Root can make more
+interfaces readable. An interface appearing in the log confirms discovery. Detailed
+dashboard readings still depend on which properties the app can read and interpret.
+
+The scan is read-only. Logs rotate in the app's private storage. Use **View log** and
+**Copy log** to share recent entries manually, for example when reporting a device
+compatibility issue. ChargeScope keeps the log on the phone.
 
 ## Build
 
