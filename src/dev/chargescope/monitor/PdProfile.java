@@ -1,6 +1,7 @@
 package dev.chargescope.monitor;
 
 import java.util.Locale;
+import java.util.Map;
 
 final class PdProfile {
     final int index;
@@ -51,6 +52,46 @@ final class PdProfile {
         }
     }
 
+    static PdProfile fromSysfs(int index, Map<String, String> fields) {
+        String prefix = "standard_pd." + index + ".";
+        String type = fields.get(prefix + "type");
+        if (type == null) return null;
+
+        int maxMa = quantity(fields.get(prefix + "maximum_current"), "mA");
+        if ("fixed_supply".equals(type)) {
+            int mv = quantity(fields.get(prefix + "voltage"), "mV");
+            return mv > 0 && maxMa > 0 ? new PdProfile(index, "Fixed", mv, mv, maxMa, 0, false) : null;
+        }
+
+        int minMv = quantity(fields.get(prefix + "minimum_voltage"), "mV");
+        int maxMv = quantity(fields.get(prefix + "maximum_voltage"), "mV");
+        if (minMv == 0 || maxMv < minMv) return null;
+        switch (type) {
+            case "battery":
+                int maxMw = quantity(fields.get(prefix + "maximum_power"), "mW");
+                return maxMw > 0 ? new PdProfile(index, "Battery supply", minMv, maxMv, 0, maxMw, false) : null;
+            case "variable_supply":
+                return maxMa > 0 ? new PdProfile(index, "Variable", minMv, maxMv, maxMa, 0, false) : null;
+            case "programmable_supply":
+                boolean limited = "1".equals(fields.get(prefix + "pps_power_limited"));
+                return maxMa > 0 ? new PdProfile(index, "PPS", minMv, maxMv, maxMa, 0, limited) : null;
+            default:
+                return null;
+        }
+    }
+
+    private static int quantity(String raw, String unit) {
+        if (raw == null) return 0;
+        String value = raw.trim();
+        if (value.endsWith(unit)) value = value.substring(0, value.length() - unit.length()).trim();
+        try {
+            int parsed = Integer.parseInt(value);
+            return parsed > 0 && parsed <= 1_000_000 ? parsed : 0;
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
     String voltageLabel() {
         if (maxMv == 0) return "—";
         if (minMv == maxMv) return number(minMv / 1000.0) + " V";
@@ -64,7 +105,13 @@ final class PdProfile {
     }
 
     int fixedPowerMw() {
-        return "Fixed".equals(kind) ? maxMv * maxMa / 1000 : 0;
+        return "Fixed".equals(kind) ? (int) ((long) maxMv * maxMa / 1000) : 0;
+    }
+
+    boolean matches(PdProfile other) {
+        return other != null && index == other.index && kind.equals(other.kind) && minMv == other.minMv
+            && maxMv == other.maxMv && maxMa == other.maxMa && maxMw == other.maxMw
+            && powerLimited == other.powerLimited;
     }
 
     static int requestedIndex(String request) {

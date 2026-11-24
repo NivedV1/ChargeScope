@@ -26,7 +26,19 @@ final class RootSampler {
     private int generation;
     private Process process;
 
-    static String loadScript(Context context, String name) throws IOException {
+    static String loadChargingScript(Context context, String name) throws IOException {
+        String script = loadScript(context, "charging_interfaces.sh") + "\n"
+            + loadScript(context, "qualcomm_telemetry.sh");
+        for (String asset : context.getAssets().list("")) {
+            if ("legacy_telemetry.sh".equals(asset)) {
+                script += "\n" + loadScript(context, asset);
+                break;
+            }
+        }
+        return script + "\n" + loadScript(context, name);
+    }
+
+    private static String loadScript(Context context, String name) throws IOException {
         try (InputStream input = context.getAssets().open(name);
              ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
             byte[] buffer = new byte[4096];

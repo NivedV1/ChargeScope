@@ -56,7 +56,7 @@ public final class InterfaceLoggerService extends Service {
 
         startForeground(NOTIFICATION_ID, buildNotification());
         try {
-            script = RootSampler.loadScript(this, "interface_probe.sh");
+            script = RootSampler.loadChargingScript(this, "interface_probe.sh");
         } catch (IOException error) {
             append("Logging could not start: probe asset unavailable.");
             stopSelf();
@@ -113,7 +113,7 @@ public final class InterfaceLoggerService extends Service {
         for (Map.Entry<String, String> field : new TreeMap<>(fields).entrySet()) {
             String key = field.getKey();
             if (key.startsWith("pd.") || key.startsWith("typec.") ||
-                key.startsWith("controller.") || key.startsWith("supply.")) {
+                key.startsWith("controller.") || key.startsWith("supply.") || key.startsWith("selected.")) {
                 text.append('\n').append(field.getValue());
                 found = true;
             }
@@ -145,7 +145,7 @@ public final class InterfaceLoggerService extends Service {
 
         return new Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_logging)
-            .setContentTitle("ChargeScope interface logger")
+            .setContentTitle(getApplicationInfo().loadLabel(getPackageManager()) + " interface logger")
             .setContentText("Recording USB interface changes on this device")
             .setContentIntent(openApp)
             .setOnlyAlertOnce(true)

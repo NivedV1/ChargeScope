@@ -10,18 +10,42 @@ read_fields() {
     done
 }
 
+read_standard_pd() {
+    local node entry index prefix
+    [ -n "$pd_caps" ] || return
+    for node in "$pd_caps"/[1-7]:*; do
+        [ -d "$node" ] || continue
+        entry=${node##*/}
+        index=${entry%%:*}
+        prefix="standard_pd.$index"
+        case "${entry#*:}" in
+            fixed_supply|variable_supply|battery|programmable_supply)
+                printf '%s.type=%s\n' "$prefix" "${entry#*:}"
+                read_fields "$prefix" "$node" voltage minimum_voltage maximum_voltage \
+                    maximum_current maximum_power pps_power_limited
+                ;;
+        esac
+    done
+}
+
 [ "$(id -u)" = 0 ] || exit 1
 printf '@ROOT\n'
 while :; do
-    read_fields usb /sys/class/power_supply/usb present online real_type type typec_mode \
-        voltage_now voltage_vph input_current_now input_current_settled \
-        pd_active pd_voltage_min pd_voltage_max pd_current_max connector_temp connector_health
-    read_fields port /sys/class/typec/port0 data_role power_role power_operation_mode
-    read_fields partner /sys/class/typec/port0-partner supports_usb_power_delivery
-    read_fields battery /sys/class/power_supply/battery voltage_now current_now temp capacity status
-    read_fields pump /sys/class/power_supply/bq2597x-standalone charging_enabled \
-        ti_vbus_present ti_bus_voltage ti_bus_current ti_battery_voltage ti_die_temperature
-    read_fields pd /sys/class/usbpd/usbpd0 contract select_pdo rdo pdo1 pdo2 pdo3 pdo4 pdo5 pdo6 pdo7
+    # Resolve again for each snapshot so unplugging or swapping ports drops stale readings.
+    discover_charging_interfaces
+    if [ -n "$port" ]; then
+        read_fields port "$port" data_role power_role power_operation_mode
+    fi
+    if [ -n "$partner" ]; then
+        printf 'partner.attached=1\n'
+        read_fields partner "$partner" supports_usb_power_delivery
+    fi
+    if [ -n "$usb_supply" ]; then
+        read_fields usb "$usb_supply" present online type usb_type
+    fi
+    read_standard_pd
+    read_vendor_telemetry
+    read_qualcomm_interfaces
     printf '@SAMPLE\n' || exit
     sleep 2
 done

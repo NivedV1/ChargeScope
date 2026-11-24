@@ -24,6 +24,12 @@ newer. Download `ChargeScope.apk` from [GitHub Releases](https://github.com/Nive
 Detailed readings depend on the phone's kernel and available sensors. The detailed
 USB PD and charge-pump dashboard was tested on the Xiaomi Mi 11X. Other Qualcomm
 and MediaTek devices may expose different interfaces and show fewer readings.
+With root enabled, ChargeScope redetects the connected USB-C partner and USB
+power supply as it samples. It prefers the connected partner's standard Linux
+USB PD profiles, then uses the detected Qualcomm PD driver or the legacy
+Mi 11X reader when available. Some
+controllers expose charging modes or negotiated values without live USB sensor
+readings. Those live readings stay blank until a driver mapping is verified.
 
 ### Full dashboard screenshot
 
@@ -42,8 +48,8 @@ The log records the device model, Android and kernel versions, and changes to th
 power source, visible USB-C and charging interfaces, driver names, and reported
 modes. The scan covers standard Linux Type-C and USB PD classes, vendor USB PD
 classes, Type-C port controllers, and charging power supplies. Root can make more
-interfaces readable. An interface appearing in the log confirms discovery. Detailed
-dashboard readings still depend on which properties the app can read and interpret.
+interfaces readable. The log also identifies selected interfaces and lists
+available voltage and current attribute names to help diagnose missing readings.
 
 The scan is read-only. Logs rotate in the app's private storage. Use **View log** and
 **Copy log** to share recent entries manually, for example when reporting a device
@@ -74,6 +80,13 @@ Install Android SDK Platform 36, Android Build Tools 36.0.0, a JDK, and `zip`.
 Set `ANDROID_SDK_ROOT` to the SDK directory and run `./build.sh`. The script writes
 a development-signed `ChargeScope.apk`. Keep the generated `.build/debug.keystore`
 if you want to install future builds as updates.
+
+For a side-by-side test, run `./build.sh --autodetect-debug`. It produces
+`ChargeScope-Autodetect-Debug.apk` with the app ID `dev.chargescope.monitor.autodetect`.
+It has its own settings, logs, signing key, and root grant. Its dashboard uses
+Android's battery API, standard USB-C and USB PD discovery, and a Qualcomm reader
+selected by the active kernel drivers. The Mi 11X telemetry reader is excluded.
+Use **USB interface log** to see the interfaces it found.
 
 ## License
 

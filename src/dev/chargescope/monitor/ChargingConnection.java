@@ -11,7 +11,9 @@ final class ChargingConnection {
 
     ChargingConnection(Map<String, String> fields, int plugged) {
         boolean usbReported = "1".equals(fields.get("usb.online"))
+            || "2".equals(fields.get("usb.online"))
             || "1".equals(fields.get("usb.present"))
+            || "1".equals(fields.get("partner.attached"))
             || fields.containsKey("partner.supports_usb_power_delivery");
         boolean androidReportsWired = (plugged &
             (BatteryManager.BATTERY_PLUGGED_AC | BatteryManager.BATTERY_PLUGGED_USB)) != 0;

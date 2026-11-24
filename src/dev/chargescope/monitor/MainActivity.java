@@ -99,7 +99,7 @@ public final class MainActivity extends Activity {
         getWindow().setNavigationBarColor(palette.background);
         battery = getSystemService(BatteryManager.class);
         try {
-            script = RootSampler.loadScript(this, "telemetry.sh");
+            script = RootSampler.loadChargingScript(this, "telemetry.sh");
         } catch (IOException ignored) {
             rootMessage = "The telemetry script could not be opened.";
         }
@@ -182,7 +182,8 @@ public final class MainActivity extends Activity {
         symbol.setGravity(Gravity.CENTER);
         symbol.setBackground(background(palette.primaryContainer, 14, Color.TRANSPARENT));
         header.addView(symbol, new LinearLayout.LayoutParams(dp(40), dp(40)));
-        TextView title = label("ChargeScope", 23, palette.onSurface, true);
+        String appName = getApplicationInfo().loadLabel(getPackageManager()).toString();
+        TextView title = label(appName, 23, palette.onSurface, true);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, -2, 1);
         titleParams.leftMargin = dp(11);
         header.addView(title, titleParams);
@@ -392,31 +393,54 @@ public final class MainActivity extends Activity {
 
         String dataRole = selectedRole(sample.get("port.data_role"));
         String powerRole = selectedRole(sample.get("port.power_role"));
+        String portMode = selectedRole(sample.get("port.power_operation_mode"));
         ChargingConnection power = new ChargingConnection(sample, plugged);
-        boolean pd = power.usbAttached && "explicit".equals(sample.get("pd.contract"));
+        boolean sourcing = power.usbAttached && "source".equals(powerRole);
+        boolean chargerAttached = power.usbAttached && !sourcing;
         List<PdProfile> profiles = new ArrayList<>();
-        if (power.usbAttached) {
+        if (chargerAttached && "sink".equals(powerRole)) {
+            for (int i = 1; i <= 7; i++) {
+                PdProfile profile = PdProfile.fromSysfs(i, sample);
+                if (profile != null) profiles.add(profile);
+            }
+        }
+        boolean standardProfiles = !profiles.isEmpty();
+        if (chargerAttached && !standardProfiles) {
             for (int i = 1; i <= 7; i++) {
                 PdProfile profile = PdProfile.decode(i, sample.get("pd.pdo" + i));
                 if (profile != null) profiles.add(profile);
             }
         }
+        boolean rawContract = chargerAttached && "explicit".equals(sample.get("pd.contract"));
         String rdo = sample.get("pd.rdo");
-        int activeIndex = pd ? PdProfile.requestedIndex(rdo) : 0;
-        if (pd && activeIndex == 0) activeIndex = (int) or(field("pd.select_pdo", 1), 0);
+        int activeIndex = rawContract ? PdProfile.requestedIndex(rdo) : 0;
+        if (rawContract && activeIndex == 0) activeIndex = (int) or(field("pd.select_pdo", 1), 0);
         PdProfile active = null;
         for (PdProfile profile : profiles) {
             if (profile.index == activeIndex) active = profile;
         }
+        // A vendor request can index the standard list only if both report the same profile.
+        if (standardProfiles && active != null &&
+            !active.matches(PdProfile.decode(activeIndex, sample.get("pd.pdo" + activeIndex)))) {
+            active = null;
+            activeIndex = 0;
+        }
 
-        String type = power.usbAttached ? sample.get("usb.real_type") : null;
+        String type = chargerAttached ? usbSupplyType() : null;
+        boolean pd = chargerAttached && (rawContract || standardProfiles || "usb_power_delivery".equals(portMode)
+            || "USB_PD".equals(type) || "PD".equals(type)
+            || "USB_PD_DRP".equals(type) || "PD_DRP".equals(type)
+            || "USB_PD_PPS".equals(type) || "PD_PPS".equals(type));
         String modeText;
         if (!power.powerAttached) modeText = "No charger connected";
         else if (power.wireless && !power.usbAttached) modeText = "Wireless charging";
-        else if (active != null && "PPS".equals(active.kind)) modeText = "USB Power Delivery · PPS";
-        else if (pd || "USB_PD".equals(type)) modeText = "USB Power Delivery";
-        else if ("source".equals(powerRole)) modeText = "USB host · power source";
-        else if (type != null && !type.equals("Unknown")) modeText = type.replace('_', ' ');
+        else if (sourcing) modeText = "host".equals(dataRole) ? "USB host · power source" : "USB power source";
+        else if (pd && ((active != null && "PPS".equals(active.kind))
+            || "USB_PD_PPS".equals(type) || "PD_PPS".equals(type))) modeText = "USB Power Delivery · PPS";
+        else if (pd) modeText = "USB Power Delivery";
+        else if (chargerAttached && ("1.5A".equals(portMode) || "3.0A".equals(portMode))) {
+            modeText = "USB-C · " + portMode.replace("A", " A") + " advertised";
+        } else if (type != null && !type.equalsIgnoreCase("unknown")) modeText = type.replace('_', ' ');
         else modeText = "External power connected";
         mode.setText(modeText);
 
@@ -429,12 +453,12 @@ public final class MainActivity extends Activity {
 
         double v = Double.NaN;
         double a = Double.NaN;
-        if (pd) {
-            v = active == null ? Double.NaN : active.requestedVoltage(rdo);
-            a = active == null ? Double.NaN : active.requestedCurrent(rdo);
+        if (active != null) {
+            v = active.requestedVoltage(rdo);
+            a = active.requestedCurrent(rdo);
         }
         boolean hasRequest = Double.isFinite(positive(v)) && Double.isFinite(positive(a));
-        if (!hasRequest && power.usbAttached && (pd || "USB_PD".equals(type))) {
+        if (!hasRequest && pd) {
             v = positive(field("usb.pd_voltage_max", 0.000001));
             a = positive(field("usb.pd_current_max", 0.000001));
         }
@@ -458,7 +482,7 @@ public final class MainActivity extends Activity {
         String pumpEnabled = sample.get("pump.charging_enabled");
         String pumpVbus = sample.get("pump.ti_vbus_present");
         double pumpVoltage = positive(field("pump.ti_bus_voltage", 0.001));
-        boolean pumpHasInput = power.usbAttached && ("1".equals(pumpVbus)
+        boolean pumpHasInput = chargerAttached && ("1".equals(pumpVbus)
             || (pumpVbus == null && Double.isFinite(pumpVoltage)));
         double pumpV = pumpHasInput ? pumpVoltage : Double.NaN;
         double pumpA = pumpHasInput ? field("pump.ti_bus_current", 0.001) : Double.NaN;
@@ -475,7 +499,19 @@ public final class MainActivity extends Activity {
         double sense = positive(field("pump.ti_battery_voltage", 0.001));
         rails.setVisibility(root && (Double.isFinite(rail) || Double.isFinite(sense)) ? View.VISIBLE : View.GONE);
         rails.setText("System rail " + unit(rail, "V") + "  ·  Pump battery sense " + unit(sense, "V"));
-        renderProfiles(profiles, activeIndex, power.usbAttached);
+        renderProfiles(profiles, activeIndex, chargerAttached);
+    }
+
+    private String usbSupplyType() {
+        String type = sample.get("usb.real_type");
+        if (type != null && !type.equalsIgnoreCase("unknown")) return type;
+        String types = sample.get("usb.usb_type");
+        // The kernel brackets the active type when it lists multiple modes.
+        if (types != null && (types.contains("[") || !types.trim().contains(" "))) {
+            type = selectedRole(types);
+            if (type != null && !type.equalsIgnoreCase("unknown")) return type;
+        }
+        return sample.get("usb.type");
     }
 
     private void renderProfiles(List<PdProfile> profiles, int active, boolean attached) {
