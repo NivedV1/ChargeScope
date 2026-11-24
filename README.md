@@ -25,6 +25,12 @@ Detailed readings depend on the phone's kernel and available sensors. The detail
 USB PD and charge-pump dashboard was tested on the Xiaomi Mi 11X. Other Qualcomm
 and MediaTek devices may expose different interfaces and show fewer readings.
 
+### Full dashboard screenshot
+
+ChargeScope on a rooted Xiaomi Mi 11X during a USB PD PPS charging session.
+
+<img src="docs/screenshots/chargescope-dashboard.png" alt="Full ChargeScope dashboard showing USB PD PPS charging, live measurements, charger profiles, and USB interface logging" width="360">
+
 ## Interface logging
 
 Open **USB interface log** and tap **Start logging**. ChargeScope scans on power
